@@ -29,7 +29,7 @@ cmake --build . --target Release
 
 ## TODO
 
-* Initialization
+* ~~Initialization~~
 * CPU loop
 * Display
 * Keyboard
