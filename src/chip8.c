@@ -4,25 +4,26 @@
 #include <string.h>
 #include <errno.h>
 
-#define RAM_SIZE    4096
-#define PROG_START  0x200
-#define PROG_END    0xEA0
-#define STACK_START 0xEC8
-#define REG_START   0xEE8
+#define RAM_SIZE           4096  // bytes
+#define PROGRAM_START      0x200
+#define PROGRAM_END        0xEDE
+#define STACK_START        0xEFE
+#define BUFFER_START       0xF00
+#define NUM_DATA_REGISTERS 16
 
 void run(struct chip8_state state);
 
 struct chip8_registers {
-    uint8_t  *V; // first of the contiguous registers V[0]...V[F]
-    uint8_t  *DT;
-    uint8_t  *ST;
+    uint8_t  V[NUM_DATA_REGISTERS];
+    uint8_t  DT;
+    uint8_t  ST;
     uint16_t *SP;
     uint16_t *PC;
     uint16_t *I;
 };
 
 struct chip8_state {
-    struct chip8_registers *reg;
+    struct chip8_registers *registers;
     uint8_t *ram;
 };
 
@@ -33,29 +34,29 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    FILE *progfile = fopen(argv[1], "r");
-    if (progfile == NULL) {
+    FILE *program_file = fopen(argv[1], "r");
+    if (program_file == NULL) {
         fprintf(stderr, "[ERROR] Unable to open program file %s: %s\n", argv[1], strerror(errno));
         return EXIT_FAILURE;
     }
 
     uint8_t ram[RAM_SIZE] = {0};
-    (void)fread(&ram[PROG_START], 1, PROG_END - PROG_START, progfile);
-    if (ferror(progfile) || !feof(progfile)) {
+    // XXX Instructions are stored in memory in a big-endian fashion
+    (void)fread(&ram[PROGRAM_START], 1, PROGRAM_END - PROGRAM_START, program_file);
+    if (ferror(program_file) || !feof(program_file)) {
         fprintf(stderr, "[ERROR] Unable to load program into RAM! Exiting...\n");
         return EXIT_FAILURE;
     }
 
-    (void)fclose(progfile);
+    (void)fclose(program_file);
 
-    struct chip8_registers reg = {
-        .V  = &ram[REG_START],
+    struct chip8_registers registers = {
         .SP = (uint16_t *)&ram[STACK_START],
-        .PC = (uint16_t *)&ram[PROG_START],
+        .PC = (uint16_t *)&ram[PROGRAM_START],
     };
 
     struct chip8_state state = {
-        .reg = &reg,
+        .registers = &registers,
         .ram = ram,
     };
 
@@ -66,6 +67,13 @@ int main(int argc, char *argv[])
 
 void run(struct chip8_state state)
 {
-    // printf("state.reg->V points to %p\n", state.reg->V);
-    // printf("&state.ram[REG_START] is %p\n", &(state.ram[REG_START]));
+#if 0
+    printf("state.registers->SP points to %p\n", state.registers->SP);
+    printf("*(state.registers->SP) contains %02x\n", *(state.registers->SP));
+
+    state.registers->SP--;
+
+    printf("state.registers->SP points to %p\n", state.registers->SP);
+    printf("*(state.registers->SP) contains %02x\n", *(state.registers->SP));
+#endif
 }
