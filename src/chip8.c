@@ -4,22 +4,20 @@
 #include <string.h>
 #include <errno.h>
 
-#define RAM_SIZE           4096  // bytes
-#define PROGRAM_START      0x200
-#define PROGRAM_END        0xEDE
-#define STACK_START        0xEFE
-#define BUFFER_START       0xF00
+#define RAM_SIZE 4096
+#define PROGRAM_START 0x200
+#define PROGRAM_END 0xEDE
+#define STACK_START 0xEFE
+#define BUFFER_START 0xF00
 #define NUM_DATA_REGISTERS 16
 
-void run(struct chip8_state state);
-
 struct chip8_registers {
-    uint8_t  V[NUM_DATA_REGISTERS];
-    uint8_t  DT;
-    uint8_t  ST;
-    uint16_t *SP;
-    uint16_t *PC;
-    uint16_t *I;
+    uint8_t V[NUM_DATA_REGISTERS];
+    uint8_t DT;
+    uint8_t ST;
+    uint8_t *SP;
+    uint8_t *PC;
+    uint8_t *I;
 };
 
 struct chip8_state {
@@ -27,53 +25,63 @@ struct chip8_state {
     uint8_t *ram;
 };
 
+void init(struct chip8_state *state, char *filename);
+void run(struct chip8_state state);
+
 int main(int argc, char *argv[])
 {
     if (argc != 2) {
-        fprintf(stderr, "[ERROR] Missing program filename as a parameter.\n");
+        fprintf(stderr, "[ERROR] Missing parameter program filename.\n");
         return EXIT_FAILURE;
     }
 
-    FILE *program_file = fopen(argv[1], "r");
+    struct chip8_state state;
+    init(&state, argv[1]);
+    run(state);
+}
+
+void init(struct chip8_state *state, char *filename)
+{
+    FILE *program_file = fopen(filename, "r");
     if (program_file == NULL) {
-        fprintf(stderr, "[ERROR] Unable to open program file %s: %s\n", argv[1], strerror(errno));
-        return EXIT_FAILURE;
+        fprintf(stderr, "[ERROR] Unable to open program file %s: %s\n", filename, strerror(errno));
+        exit(EXIT_FAILURE);
     }
 
-    uint8_t ram[RAM_SIZE] = {0};
-    // XXX Instructions are stored in memory in a big-endian fashion
+    uint8_t *ram = calloc(RAM_SIZE, sizeof(uint8_t));
+    if (ram == NULL) {
+        fprintf(stderr, "[ERROR] Unable to allocate Chip-8 RAM!\n");
+        exit(EXIT_FAILURE);
+    }
+
     (void)fread(&ram[PROGRAM_START], 1, PROGRAM_END - PROGRAM_START, program_file);
     if (ferror(program_file) || !feof(program_file)) {
-        fprintf(stderr, "[ERROR] Unable to load program into RAM! Exiting...\n");
-        return EXIT_FAILURE;
+        fprintf(stderr, "[ERROR] Unable to load program into Chip-8 RAM!\n");
+        free(ram);
+        exit(EXIT_FAILURE);
     }
 
-    (void)fclose(program_file);
+    fclose(program_file);
 
-    struct chip8_registers registers = {
-        .SP = (uint16_t *)&ram[STACK_START],
-        .PC = (uint16_t *)&ram[PROGRAM_START],
-    };
+    struct chip8_registers *registers = calloc(1, sizeof(struct chip8_registers));
+    if (registers == NULL) {
+        fprintf(stderr, "[ERROR] Unable o allocate Chip-8 registers!\n");
+        free(ram);
+        exit(EXIT_FAILURE);
+    }
 
-    struct chip8_state state = {
-        .registers = &registers,
-        .ram = ram,
-    };
-
-    run(state);
-
-    return EXIT_SUCCESS;
+    registers->SP = &ram[STACK_START];
+    registers->PC = &ram[PROGRAM_START];
+    
+    state->registers = registers;
+    state->ram = ram;
 }
 
 void run(struct chip8_state state)
 {
-#if 0
-    printf("state.registers->SP points to %p\n", state.registers->SP);
-    printf("*(state.registers->SP) contains %02x\n", *(state.registers->SP));
-
-    state.registers->SP--;
-
-    printf("state.registers->SP points to %p\n", state.registers->SP);
-    printf("*(state.registers->SP) contains %02x\n", *(state.registers->SP));
-#endif
+    while (1) {
+        // Fetch opcode
+        // Decode opcode -> instruction
+        // Execute instruction
+    }
 }
