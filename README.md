@@ -20,7 +20,7 @@ You should be able to get a copy from your GNU/Linux distribution repositories o
 Example for MSVC (Windows):
 
 ```
-cl.exe /Wall .\chip8.c /Fechip8.exe /I D:\include\SDL2 /link /LIBPATH:D:\lib\c\SDL2\x86 SDL2.lib SDL2main.lib /SUBSYSTEM:WINDOWS
+cl.exe /Wall .\chip8.c /Fechip8.exe /I D:\include\SDL2 /link /LIBPATH:D:\lib\c\SDL2\x86 SDL2.lib SDL2main.lib /SUBSYSTEM:CONSOLE
 ```
 
 Adapt `/I D:\include\SDL2` and `/LIBPATH:D:\lib\SDL2\x86` to your setup.
