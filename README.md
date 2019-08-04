@@ -13,19 +13,17 @@ This is a simple implementation of such an interpreter, in the C programming lan
 
 ## Building from source
 
-For now I'm using **CMake**.
+The only requirement is **SDL2**.
 
-**CMake** is often refered to as a build file generator - it is responsible for the automated creation of Makefiles, Visual Studio Solutions, etc.
-You can get **CMake** from the [official website](https://cmake.org/download/), your GNU/Linux distribution repositories or Visual Studio installer.
-Once that's dealt with, all you need to do is:
+You should be able to get a copy from your GNU/Linux distribution repositories or the [official website](https://www.libsdl.org/). Once that's dealt with, all you need to do is call your C compiler with the necessary flags to link against SDL2.
+
+Example for MSVC (Windows):
 
 ```
-cd chip8
-mkdir build
-cd build
-cmake ..
-cmake --build . --target Release
+cl.exe /Wall .\chip8.c /Fechip8.exe /I D:\include\SDL2 /link /LIBPATH:D:\lib\c\SDL2\x86 SDL2.lib SDL2main.lib /SUBSYSTEM:WINDOWS
 ```
+
+Adapt `/I D:\include\SDL2` and `/LIBPATH:D:\lib\SDL2\x86` to your setup.
 
 ## TODO
 
