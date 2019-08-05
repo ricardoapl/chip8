@@ -40,113 +40,136 @@ struct chip8_state {
 };
 
 void init(struct chip8_state *state, char *filename);
+int init_ram(struct chip8_state *state, char *filename);
+int init_registers(struct chip8_state *state);
+int init_display(struct chip8_state *state);
 void run(struct chip8_state state);
 void terminate(struct chip8_state *state);
 
 int main(int argc, char *argv[])
 {
+    struct chip8_state state;
+
     if (argc != 2) {
-        fprintf(stderr, "[ERROR] Missing parameter program filename.\n");
+        fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    struct chip8_state state;
     init(&state, argv[1]);
-
     run(state);
-
     terminate(&state);
 
     return EXIT_SUCCESS;
 }
 
+// XXX exit/return errno-like constants?
+// XXX change return type to 'int' and let main handle exit()/return?
 void init(struct chip8_state *state, char *filename)
 {
-    // XXX init ram
-    FILE *program_file = fopen(filename, "r");
-    if (program_file == NULL) {
-        fprintf(stderr, "[ERROR] Unable to open program file %s: %s\n", filename, strerror(errno));
+    if (init_ram(state, filename) < 0) {
         exit(EXIT_FAILURE);
     }
 
-    uint8_t *ram = calloc(RAM_SIZE, sizeof(uint8_t));
-    if (ram == NULL) {
-        fprintf(stderr, "[ERROR] Unable to allocate Chip-8 RAM!\n");
+    if (init_registers(state) < 0) {
+        free(state->ram);
         exit(EXIT_FAILURE);
     }
 
-    (void)fread(&ram[PROGRAM_START], 1, PROGRAM_END - PROGRAM_START, program_file);
-    if (ferror(program_file) || !feof(program_file)) {
-        fprintf(stderr, "[ERROR] Unable to load program into Chip-8 RAM!\n");
-        free(ram);
+    if (init_display(state) < 0) {
+        free(state->registers);
+        free(state->ram);
         exit(EXIT_FAILURE);
     }
+}
 
-    fclose(program_file);
-
-    // XXX init registers
-    struct chip8_registers *registers = calloc(1, sizeof(struct chip8_registers));
-    if (registers == NULL) {
-        fprintf(stderr, "[ERROR] Unable o allocate Chip-8 registers!\n");
-        free(ram);
-        exit(EXIT_FAILURE);
+int init_ram(struct chip8_state *state, char *filename)
+{
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        fprintf(stderr, "Unable to open '%s': %s\n", filename, strerror(errno));
+        return -EIO;
     }
 
-    registers->SP = &ram[STACK_START];
-    registers->PC = &ram[PROGRAM_START];
+    state->ram = calloc(RAM_SIZE, sizeof(uint8_t));
+    if (state->ram == NULL) {
+        fprintf(stderr, "Unable to allocate Chip-8 RAM!\n");
+        return -ENOMEM;
+    }
 
-    // XXX init display
+    (void)fread(&state->ram[PROGRAM_START], 1, PROGRAM_END - PROGRAM_START, file);
+    if (ferror(file) || !feof(file)) {
+        fprintf(stderr, "Unable to load file into Chip-8 RAM!\n");
+        free(state->ram);
+        return -EIO;
+    }
+
+    fclose(file);
+
+    return 0;
+}
+
+int init_registers(struct chip8_state *state)
+{
+    state->registers = calloc(1, sizeof(struct chip8_registers));
+    if (state->registers == NULL) {
+        fprintf(stderr, "Unable to allocate Chip-8 registers!\n");
+        return -ENOMEM;
+    }
+
+    state->registers->SP = &state->ram[STACK_START];
+    state->registers->PC = &state->ram[PROGRAM_START];
+
+    return 0;
+}
+
+// XXX return errno-like constants?
+// XXX declare window and renderer in the beginning
+int init_display(struct chip8_state *state)
+{
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        fprintf(stderr, "[ERROR] Unable to initialize SDL subsystems: %s\n", SDL_GetError());
-        free(registers);
-        free(ram);
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "Unable to initialize SDL subsystems: %s\n", SDL_GetError());
+        return -1;
     }
-    
+
+    // TODO make window title a constant
     SDL_Window *window = SDL_CreateWindow("CHIP-8", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
     if (window == NULL) {
-        fprintf(stderr, "[ERROR] Unable to create SDL window: %s\n", SDL_GetError());
-        free(registers);
-        free(ram);
+        fprintf(stderr, "Unable to create SDL window: %s\n", SDL_GetError());
         SDL_Quit();
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     SDL_Renderer *renderer = SDL_CreateRenderer(window, SDL_RENDERER_INDEX, SDL_RENDERER_FLAGS);
     if (renderer == NULL) {
-        fprintf(stderr, "[ERROR] Unable to create SDL window and renderer: %s\n", SDL_GetError());
-        free(registers);
-        free(ram);
+        fprintf(stderr, "Unable to create SDL renderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
         SDL_Quit();
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
-    struct chip8_display *display = calloc(1, sizeof(struct chip8_display));
-    if (display == NULL) {
-        fprintf(stderr, "[ERROR] Unable to allocate Chip-8 display!\n");
-        free(registers);
-        free(ram);
+    state->display = calloc(1, sizeof(struct chip8_display));
+    if (state->display == NULL) {
+        fprintf(stderr, "Unable to allocate Chip-8 display!\n");
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
-        exit(EXIT_FAILURE);
+        return -ENOMEM;
     }
 
-    display->buffer = &ram[BUFFER_START];
-    display->window = window;
-    display->renderer = renderer;
-    
-    state->ram = ram;
-    state->registers = registers;
-    state->display = display;
+    state->display->window = window;
+    state->display->renderer = renderer;
+    state->display->buffer = &state->ram[BUFFER_START];
+
+    return 0;
 }
 
+// XXX shouldn't 'state' be '*state' to update register->SP etc.?
 void run(struct chip8_state state)
 {
-    SDL_Event event;
     int close_request = 0;
+
     while (!close_request) {
+        SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 close_request = 1;
@@ -154,9 +177,10 @@ void run(struct chip8_state state)
         }
 
         SDL_Delay(500);
-        // TODO Fetch opcode
-        // TODO Decode opcode -> instruction
-        // TODO Execute instruction
+
+        // TODO fetch opcode
+        // TODO decode opcode into instruction
+        // TODO execute instruction
     }
 }
 
@@ -164,11 +188,9 @@ void terminate(struct chip8_state *state)
 {
     SDL_DestroyRenderer(state->display->renderer);
     SDL_DestroyWindow(state->display->window);
-    free(state->display);
-
-    free(state->registers);
-
-    free(state->ram);
-
     SDL_Quit();
+
+    free(state->display);
+    free(state->registers);
+    free(state->ram);
 }
