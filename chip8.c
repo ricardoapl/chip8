@@ -12,8 +12,8 @@
 #define BUFFER_START 0xF00
 #define NUM_DATA_REGISTERS 16
 // XXX SDL parameters
-#define WINDOW_WIDTH 640
-#define WINDOW_HEIGHT 480
+#define SDL_WINDOW_WIDTH 640
+#define SDL_WINDOW_HEIGHT 480
 #define SDL_WINDOW_FLAGS 0
 #define SDL_RENDERER_FLAGS SDL_RENDERER_ACCELERATED
 #define SDL_RENDERER_INDEX -1
@@ -145,7 +145,7 @@ int init_display(struct chip8_state *state)
         return ESDL;
     }
 
-    window = SDL_CreateWindow("CHIP-8", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
+    window = SDL_CreateWindow("CHIP-8", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
     if (window == NULL) {
         fprintf(stderr, "Failed to create SDL window: %s\n", SDL_GetError());
         SDL_Quit();
@@ -176,24 +176,26 @@ int init_display(struct chip8_state *state)
     return 0;
 }
 
-// XXX shouldn't 'state' be '*state' to update register->SP etc.?
+// XXX have a different thread poll for events?
 void run(struct chip8_state state)
 {
     int close_request = 0;
     SDL_Event event;
 
     while (!close_request) {
+
+        // TODO fetch instruction
+        // TODO decode instruction
+        // TODO execute instruction
+
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 close_request = 1;
+                break;
             }
         }
 
         SDL_Delay(500);
-
-        // TODO fetch opcode
-        // TODO decode opcode into instruction
-        // TODO execute instruction
     }
 }
 
