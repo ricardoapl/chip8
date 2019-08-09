@@ -27,9 +27,9 @@ Adapt `/I D:\include\SDL2` and `/LIBPATH:D:\lib\SDL2\x86` to your setup.
 
 ## TODO
 
+* Check for memory errors (Valgrind, ASan, ...)
 * ~~Initialization~~
-* CPU loop
-* Opcode parsing
+* Fetch-Decode-Execute
 * Instructions
 * Display
 * Keyboard
@@ -45,3 +45,5 @@ https://en.wikipedia.org/wiki/CHIP-8
 http://devernay.free.fr/hacks/chip8/C8TECH10.HTM
 
 http://mattmik.com/files/chip8/mastering/chip8.html
+
+https://www.libsdl.org/
