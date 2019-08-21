@@ -27,16 +27,12 @@ Adapt `/I D:\include\SDL2` and `/LIBPATH:D:\lib\SDL2\x86` to your setup.
 
 ## TODO
 
-* Check for memory errors (Valgrind, ASan, ...)
+* Check for memory errors (Valgrind or ASan)
 * ~~Initialization~~
-* Fetch-Decode-Execute
-* Instructions
+* Fetch->Decode->Execute
 * Display
 * Keyboard
 * Sound
-* Debugger
-* Assembler
-* Disassembler
 
 ## References
 
