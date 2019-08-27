@@ -21,11 +21,10 @@
 #define ESDLINIT 250
 #define ESDLWIN 251
 #define ESDLRNDR 252
-#define EMUTEXLK 253
+
 #define EXIT_INVALID_ARGS 1
 #define EXIT_INIT_FAILURE 2
-#define EXIT_MUTEX_FAILURE 3
-#define EXIT_THREAD_FAILURE 4
+#define EXIT_RUN_FAILURE 3
 
 struct chip8_registers {
     uint8_t V[NUM_DATA_REGISTERS];
@@ -48,12 +47,6 @@ struct chip8_state {
     struct chip8_screen *screen;
 };
 
-struct chip8_thread_params {
-    struct chip8_state state;
-    SDL_mutex *mutex;
-    int stop;
-};
-
 int init(struct chip8_state *state, char *filename);
 int init_ram(struct chip8_state *state, char *filename);
 int init_registers(struct chip8_state *state);
@@ -62,17 +55,12 @@ void deinit(struct chip8_state *state);
 void deinit_screen(struct chip8_state *state);
 void deinit_registers(struct chip8_state *state);
 void deinit_ram(struct chip8_state *state);
-int run_cpu(void *data);
-int run_io(void *data);
+int run(struct chip8_state state);
 
-// TODO Check thread return value for errors
-// TODO Release resources on thread/mutex failure
 int main(int argc, char *argv[])
 {
     int err;
     struct chip8_state state;
-    struct chip8_thread_params params;
-    SDL_Thread *cpu, *io;
 
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
@@ -84,31 +72,12 @@ int main(int argc, char *argv[])
         return EXIT_INIT_FAILURE;
     }
 
-    params.stop = 0;
-    params.state = state;
-    params.mutex = SDL_CreateMutex();
-    if (params.mutex == NULL) {
-        fprintf(stderr, "SDL_CreateMutex() failed: %s\n", SDL_GetError());
-        return EXIT_MUTEX_FAILURE;
-    }
-    
-    cpu = SDL_CreateThread(run_cpu, "CHIP-8 CPU", (void *)&params);
-    if (cpu == NULL) {
-        fprintf(stderr, "SDL_CreateThread() failed: %s\n", SDL_GetError());
-        return EXIT_THREAD_FAILURE;
+    err = run(state);
+    if (err) {
+        deinit(&state);
+        return EXIT_RUN_FAILURE;
     }
 
-    io = SDL_CreateThread(run_io, "CHIP-8 IO", (void *)&params);
-    if (io == NULL) {
-        fprintf(stderr, "SDL_CreateThread() failed: %s\n", SDL_GetError());
-        return EXIT_THREAD_FAILURE;
-    }
-    
-    SDL_WaitThread(cpu, NULL);
-    SDL_WaitThread(io, NULL);
-
-    SDL_DestroyMutex(params.mutex);
-    
     deinit(&state);
 
     return EXIT_SUCCESS;
@@ -206,7 +175,8 @@ int init_screen(struct chip8_state *state)
         goto error_init_sdl;
     }
 
-    window = SDL_CreateWindow("CHIP-8", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
+    window = SDL_CreateWindow("CHIP-8", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                              SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
     if (window == NULL) {
         fprintf(stderr, "SDL_CreateWindow() failed: %s\n", SDL_GetError());
         err = ESDLWIN;
@@ -272,26 +242,20 @@ void deinit_ram(struct chip8_state *state)
     state->ram = NULL;
 }
 
-int run_cpu(void *data)
+int run(struct chip8_state state)
 {
-    struct chip8_thread_params *params = data;
-
-    // TODO Fetch
-
-    // TODO Decode
-
-    // TODO Execute
-    
-    return 0;
-}
-
-int run_io(void *data)
-{
-    struct chip8_thread_params *params = data;
     int close_request = 0;
     SDL_Event event;
+    
 
     while (!close_request) {
+
+        // TODO Fetch
+
+        // TODO Decode
+
+        // TODO Execute
+
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 close_request = 1;
@@ -299,18 +263,6 @@ int run_io(void *data)
             }
         }
     }
-    
-    if (SDL_LockMutex(params->mutex) < 0) {
-        fprintf(stderr, "SDL_LockMutex() failed: %s\n", SDL_GetError());
-        return EMUTEXLK;
-    }
 
-    params->stop = 1;
-
-    if (SDL_UnlockMutex(params->mutex) < 0) {
-        fprintf(stderr, "SDL_UnlockMutex() failed: %s\n", SDL_GetError());
-        return EMUTEXLK;
-    }
-    
     return 0;
 }
