@@ -12,6 +12,7 @@
 #define BUFFER_START 0xF00
 #define NUM_DATA_REGISTERS 16
 
+#define SDL_WINDOW_NAME "CHIP-8"
 #define SDL_WINDOW_WIDTH 640
 #define SDL_WINDOW_HEIGHT 480
 #define SDL_WINDOW_FLAGS 0
@@ -175,7 +176,7 @@ int init_screen(struct chip8_state *state)
         goto error_init_sdl;
     }
 
-    window = SDL_CreateWindow("CHIP-8", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    window = SDL_CreateWindow(SDL_WINDOW_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                               SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
     if (window == NULL) {
         fprintf(stderr, "SDL_CreateWindow() failed: %s\n", SDL_GetError());
@@ -247,7 +248,6 @@ int run(struct chip8_state state)
     int close_request = 0;
     SDL_Event event;
     
-
     while (!close_request) {
 
         // TODO Fetch
