@@ -7,10 +7,13 @@
 
 #define RAM_SIZE 4096
 #define PROGRAM_START 0x200
-#define PROGRAM_END 0xEDE
-#define STACK_START 0xEFE
-#define BUFFER_START 0xF00
+#define PROGRAM_END 0xFFF
+#define STACK_SIZE 16
+#define STACK_START 15
+#define SCREEN_BUFFER_WIDTH 64
+#define SCREEN_BUFFER_HEIGHT 32
 #define NUM_DATA_REGISTERS 16
+#define OPCODE_SIZE 2
 
 #define SDL_WINDOW_NAME "CHIP-8"
 #define SDL_WINDOW_WIDTH 640
@@ -31,33 +34,35 @@ struct chip8_registers {
     uint8_t V[NUM_DATA_REGISTERS];
     uint8_t DT;
     uint8_t ST;
-    uint8_t *SP;
+    uint8_t **SP;
     uint8_t *PC;
     uint8_t *I;
 };
 
 struct chip8_screen {
-    uint8_t *buffer;
+    uint8_t buffer[SCREEN_BUFFER_WIDTH * SCREEN_BUFFER_HEIGHT];
     SDL_Window *window;
     SDL_Renderer *renderer;
 };
 
 struct chip8_state {
     uint8_t *ram;
+    uint8_t **stack;
     struct chip8_registers *registers;
     struct chip8_screen *screen;
 };
 
 int init(struct chip8_state *state, char *filename);
-int init_ram(struct chip8_state *state, char *filename);
+int init_memory(struct chip8_state *state, char *filename);
 int init_registers(struct chip8_state *state);
 int init_screen(struct chip8_state *state);
 void deinit(struct chip8_state *state);
 void deinit_screen(struct chip8_state *state);
 void deinit_registers(struct chip8_state *state);
-void deinit_ram(struct chip8_state *state);
+void deinit_memory(struct chip8_state *state);
 int run(struct chip8_state state);
 
+// TODO Fix code style (duplicate deinit() call)
 int main(int argc, char *argv[])
 {
     int err;
@@ -88,9 +93,9 @@ int init(struct chip8_state *state, char *filename)
 {
     int err;
 
-    err = init_ram(state, filename);
+    err = init_memory(state, filename);
     if (err) {
-        goto error_init_ram;
+        goto error_init_memory;
     }
 
     err = init_registers(state);
@@ -108,21 +113,21 @@ int init(struct chip8_state *state, char *filename)
 error_init_screen:
     deinit_registers(state);
 error_init_registers:
-    deinit_ram(state);
-error_init_ram:
+    deinit_memory(state);
+error_init_memory:
     return err;
 }
 
-int init_ram(struct chip8_state *state, char *filename)
+int init_memory(struct chip8_state *state, char *filename)
 {
     int err;
     FILE *file;
 
-    file = fopen(filename, "r");
-    if (file == NULL) {
-        fprintf(stderr, "fopen() failed: %s\n", strerror(errno));
-        err = EIO;
-        goto error_open_file;
+    state->stack = calloc(STACK_SIZE, sizeof(uint8_t *));
+    if (state->stack == NULL) {
+        fprintf(stderr, "calloc() for Chip-8 STACK failed\n");
+        err = ENOMEM;
+        goto error_alloc_stack;
     }
 
     state->ram = calloc(RAM_SIZE, sizeof(uint8_t));
@@ -132,7 +137,14 @@ int init_ram(struct chip8_state *state, char *filename)
         goto error_alloc_ram;
     }
 
-    (void)fread(&state->ram[PROGRAM_START], 1, PROGRAM_END - PROGRAM_START, file);
+    file = fopen(filename, "r");
+    if (file == NULL) {
+        fprintf(stderr, "fopen() failed: %s\n", strerror(errno));
+        err = EIO;
+        goto error_open_file;
+    }
+
+    fread(&state->ram[PROGRAM_START], 1, PROGRAM_END - PROGRAM_START + 1, file);
     if (ferror(file) || !feof(file)) {
         fprintf(stderr, "fread() into Chip-8 RAM failed\n");
         err = EIO;
@@ -144,10 +156,12 @@ int init_ram(struct chip8_state *state, char *filename)
     return 0;
 
 error_read_file:
-    free(state->ram);
-error_alloc_ram:
     fclose(file);
 error_open_file:
+    free(state->ram);
+error_alloc_ram:
+    free(state->stack);
+error_alloc_stack:
     return err;
 }
 
@@ -159,7 +173,7 @@ int init_registers(struct chip8_state *state)
         return ENOMEM;
     }
 
-    state->registers->SP = &state->ram[STACK_START];
+    state->registers->SP = &state->stack[STACK_START];
     state->registers->PC = &state->ram[PROGRAM_START];
 
     return 0;
@@ -201,7 +215,6 @@ int init_screen(struct chip8_state *state)
 
     state->screen->window = window;
     state->screen->renderer = renderer;
-    state->screen->buffer = &state->ram[BUFFER_START];
 
     return 0;
 
@@ -219,7 +232,7 @@ void deinit(struct chip8_state *state)
 {
     deinit_screen(state);
     deinit_registers(state);
-    deinit_ram(state);
+    deinit_memory(state);
 }
 
 void deinit_screen(struct chip8_state *state)
@@ -238,8 +251,11 @@ void deinit_registers(struct chip8_state *state)
     state->registers = NULL;
 }
 
-void deinit_ram(struct chip8_state *state)
+void deinit_memory(struct chip8_state *state)
 {
+    free(state->stack);
+    state->stack = NULL;    
+
     free(state->ram);
     state->ram = NULL;
 }
