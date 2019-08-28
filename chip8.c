@@ -116,8 +116,9 @@ error_init_ram:
 int init_ram(struct chip8_state *state, char *filename)
 {
     int err;
+    FILE *file;
 
-    FILE *file = fopen(filename, "r");
+    file = fopen(filename, "r");
     if (file == NULL) {
         fprintf(stderr, "fopen() failed: %s\n", strerror(errno));
         err = EIO;
