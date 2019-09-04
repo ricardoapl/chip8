@@ -13,7 +13,15 @@
 #define SCREEN_BUFFER_WIDTH 64
 #define SCREEN_BUFFER_HEIGHT 32
 #define NUM_DATA_REGISTERS 16
+
 #define OPCODE_SIZE 2
+#define MS_1BITS(byte) ((byte >> 7) & 0x01)
+#define LS_1BITS(byte) (byte & 0x1)
+#define MS_4BITS(byte) ((byte >> 4) & 0x0F)
+#define LS_4BITS(byte) (byte & 0x0F)
+#define MS_8BITS(bytes) (bytes[0])
+#define LS_8BITS(bytes) (bytes[1])
+#define LS_12BITS(bytes) ((LS_4BITS(MS_8BITS(bytes)) << 8) | LS_8BITS(bytes))
 
 #define SDL_WINDOW_NAME "CHIP-8"
 #define SDL_WINDOW_WIDTH 640
@@ -60,7 +68,10 @@ void deinit(struct chip8_state *state);
 void deinit_screen(struct chip8_state *state);
 void deinit_registers(struct chip8_state *state);
 void deinit_memory(struct chip8_state *state);
-int run(struct chip8_state state);
+int run(struct chip8_state *state);
+int fetch_decode_execute(struct chip8_state *state);
+int screen_clear(struct chip8_screen *screen);
+int screen_draw(struct chip8_screen *screen, uint8_t x, uint8_t y, size_t sz, uint8_t *start);
 
 // TODO Fix code style (duplicate deinit() call)
 int main(int argc, char *argv[])
@@ -78,7 +89,7 @@ int main(int argc, char *argv[])
         return EXIT_INIT_FAILURE;
     }
 
-    err = run(state);
+    err = run(&state);
     if (err) {
         deinit(&state);
         return EXIT_RUN_FAILURE;
@@ -89,6 +100,7 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
+// TODO Call srand() to seed RNG used by rand()
 int init(struct chip8_state *state, char *filename)
 {
     int err;
@@ -260,18 +272,15 @@ void deinit_memory(struct chip8_state *state)
     state->ram = NULL;
 }
 
-int run(struct chip8_state state)
+// TODO Check return value of fetch_decode_execute(), and return error if necessary
+int run(struct chip8_state *state)
 {
     int close_request = 0;
     SDL_Event event;
     
     while (!close_request) {
 
-        // TODO Fetch
-
-        // TODO Decode
-
-        // TODO Execute
+        fetch_decode_execute(state);
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
@@ -281,5 +290,199 @@ int run(struct chip8_state state)
         }
     }
 
+    return 0;
+}
+
+
+// TODO Implement missing cases 0x8, 0xE and 0xF
+// TODO Check return value for cases 0x00E0 and 0xD, and return error if necessary
+int fetch_decode_execute(struct chip8_state *state)
+{
+    uint8_t opcode[OPCODE_SIZE];
+    uint8_t x, y, n, nn, random, offset;
+    uint16_t nnn;
+    
+    memcpy(opcode, state->registers->PC, OPCODE_SIZE);
+    state->registers->PC += OPCODE_SIZE;
+
+    x = LS_4BITS(MS_8BITS(opcode));
+    y = MS_4BITS(LS_8BITS(opcode));
+    n = LS_4BITS(LS_8BITS(opcode));
+    nn = LS_8BITS(opcode);
+    nnn = LS_12BITS(opcode);
+
+    switch (MS_4BITS(MS_8BITS(opcode))) {
+    case 0x0:
+        switch (LS_8BITS(opcode)) {
+        case 0xE0: // 0x00E0
+            screen_clear(state->screen);
+            break;
+        case 0xEE: // 0x00EE
+            state->registers->SP++;
+            state->registers->PC = *state->registers->SP;
+            break;
+        default:
+            break;
+        }
+        break;
+
+    case 0x1: // 1nnn
+        state->registers->PC = &state->ram[nnn];
+        break;
+
+    case 0x2: // 2nnn
+        *state->registers->SP = state->registers->PC;
+        state->registers->SP--;
+        state->registers->PC = &state->ram[nnn];
+        break;
+
+    case 0x3: // 3xnn
+        if (state->registers->V[x] == nn) {
+            state->registers->PC += OPCODE_SIZE;
+        }
+        break;
+
+    case 0x4: // 4xnn
+        if (state->registers->V[x] != nn) {
+            state->registers->PC += OPCODE_SIZE;
+        }
+        break;
+
+    case 0x5: // 5xy0
+        if (state->registers->V[x] == state->registers->V[y]) {
+            state->registers->PC += OPCODE_SIZE;
+        }
+        break;
+
+    case 0x6: // 6xnn
+        state->registers->V[x] = nn;
+        break;
+
+    case 0x7: // 7xnn
+        state->registers->V[x] += nn;
+        break;
+
+    case 0x8:
+        switch (LS_4BITS(LS_8BITS(opcode))) {
+        case 0x0: // 8xy0
+            state->registers->V[x] = state->registers->V[y];
+            break;
+        case 0x1: // 8xy1
+            state->registers->V[x] |= state->registers->V[y];
+            break;
+        case 0x2: // 8xy2
+            state->registers->V[x] &= state->registers->V[y];
+            break;
+        case 0x3: // 8xy3
+            state->registers->V[x] ^= state->registers->V[y];
+            break;
+        case 0x4: // 8xy4
+            break;
+        case 0x5: // 8xy5
+            break;
+        case 0x6: // 8xy6
+            state->registers->V[15] = LS_1BITS(state->registers->V[y]);
+            state->registers->V[y] >>= 1;
+            state->registers->V[x] = state->registers->V[y];
+            break;
+        case 0x7: // 8xy7
+            break;
+        case 0xE: // 8xyE
+            state->registers->V[15] = MS_1BITS(state->registers->V[y]);
+            state->registers->V[y] <<= 1;
+            state->registers->V[x] = state->registers->V[y];
+            break;
+        default:
+            break;
+        }
+        break;
+
+    case 0x9: // 9xy0
+        if (state->registers->V[x] != state->registers->V[y]) {
+            state->registers->PC += OPCODE_SIZE;
+        }
+        break;
+
+    case 0xA: // Annn
+        state->registers->I = &state->ram[nnn];
+        break;
+
+    case 0xB: // Bnnn
+        offset = state->registers->V[0];
+        state->registers->PC = &state->ram[nnn + offset];
+        break;
+
+    case 0xC: // Cxnn
+        random = rand() % (UINT8_MAX + 1);
+        state->registers->V[x] = random & nn;
+        break;
+
+    case 0xD: // Dxyn
+        screen_draw(state->screen, x, y, n, state->registers->I);
+        state->registers->V[15] = 0;
+        break;
+
+    case 0xE:
+        switch (LS_8BITS(opcode)) {
+        case 0x9E: // Ex9E
+            break;
+        case 0xA1: // ExA1
+            break;
+        default:
+            break;
+        }
+        break;
+
+    case 0xF:
+        switch (LS_8BITS(opcode)) {
+        case 0x07: // Fx07
+            state->registers->V[x] = state->registers->DT;
+            break;
+        case 0x0A: // Fx0A
+            break;
+        case 0x15: // Fx15
+            state->registers->DT = state->registers->V[x];
+            break;
+        case 0x18: // Fx18
+            state->registers->ST = state->registers->V[x];
+            break;
+        case 0x1E: // Fx1E
+            state->registers->I += state->registers->V[x];
+            break;
+        case 0x29: // Fx29
+            break;
+        case 0x33: // Fx33
+            break;
+        case 0x55: // Fx55
+            for (int i = 0; i <= x; i++) {
+                *state->registers->I = state->registers->V[i];
+                state->registers->I++;
+            }
+            break;
+        case 0x65: // Fx65
+            for (int i = 0; i <= x; i++) {
+                state->registers->V[i] = *state->registers->I;
+                state->registers->I++;
+            }
+            break;
+        default:
+            break;
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    return 0;
+}
+
+int screen_clear(struct chip8_screen *screen)
+{
+    return 0;
+}
+
+int screen_draw(struct chip8_screen *screen, uint8_t x, uint8_t y, size_t sz, uint8_t *start)
+{
     return 0;
 }
