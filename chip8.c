@@ -12,7 +12,7 @@
 #define STACK_START 15
 #define SCREEN_BUFFER_WIDTH 64
 #define SCREEN_BUFFER_HEIGHT 32
-#define NUM_DATA_REGISTERS 16
+#define NUM_V_REGISTERS 16
 
 #define OPCODE_SIZE 2
 #define MS_1BITS(byte) ((byte >> 7) & 0x01)
@@ -39,7 +39,7 @@
 #define EXIT_RUN_FAILURE 3
 
 struct chip8_registers {
-    uint8_t V[NUM_DATA_REGISTERS];
+    uint8_t V[NUM_V_REGISTERS];
     uint8_t DT;
     uint8_t ST;
     uint8_t **SP;
@@ -204,7 +204,7 @@ int init_screen(struct chip8_state *state)
     }
 
     window = SDL_CreateWindow(SDL_WINDOW_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                              SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
+                            SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
     if (window == NULL) {
         fprintf(stderr, "SDL_CreateWindow() failed: %s\n", SDL_GetError());
         err = ESDLWIN;
