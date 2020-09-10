@@ -55,4 +55,4 @@ This software is developed and maintained by Ricardo Lopes ([**@ricardoapl**](ht
 
 ## License
 
-CHIP8 is available under the terms of the MIT License.
+This software is available under the terms of the MIT License.
