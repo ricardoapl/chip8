@@ -16,10 +16,10 @@ Clone this repository into your local machine and invoke your C compiler of choi
 Example for MSVC (Windows):
 
 ```
-cl.exe /Wall .\chip8.c /Fechip8.exe /I D:\include\SDL2 /link /LIBPATH:D:\lib\SDL2\x86 SDL2.lib SDL2main.lib /SUBSYSTEM:CONSOLE
+cl.exe /Wall .\chip8.c /Fechip8.exe /I .\SDL2\include /link /LIBPATH:.\SDL2\lib\x86 Shell32.lib SDL2.lib SDL2main.lib /SUBSYSTEM:CONSOLE
 ```
 
-Adapt `/I D:\include\SDL2` and `/LIBPATH:D:\lib\SDL2\x86` to your setup.
+Adapt `/I .\SDL2\include` and `/LIBPATH:.\SDL2\lib\x86` to your setup.
 
 ## Requirements
 
