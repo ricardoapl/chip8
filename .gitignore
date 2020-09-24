@@ -1,3 +1,6 @@
+SDL2
 *.exe
 *.obj
 *.dll
+*.pdb
+*.ilk
