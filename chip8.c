@@ -73,7 +73,7 @@ int fetch_decode_execute(struct chip8_state *state);
 int screen_clear(struct chip8_screen *screen);
 int screen_draw(struct chip8_screen *screen, uint8_t x, uint8_t y, size_t sz, uint8_t *start);
 
-// TODO Fix code style (duplicate deinit() call)
+// XXX (ricardoapl) Perhaps remove duplicate deinit() call
 int main(int argc, char *argv[])
 {
     int err;
@@ -100,7 +100,7 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-// TODO Call srand() to seed RNG used by rand()
+// TODO (ricardoapl) Call srand() to seed RNG used by rand()
 int init(struct chip8_state *state, char *filename)
 {
     int err;
@@ -137,14 +137,14 @@ int init_memory(struct chip8_state *state, char *filename)
 
     state->stack = calloc(STACK_SIZE, sizeof(uint8_t *));
     if (state->stack == NULL) {
-        fprintf(stderr, "calloc() for Chip-8 STACK failed\n");
+        fprintf(stderr, "calloc() for CHIP-8 STACK failed\n");
         err = ENOMEM;
         goto error_alloc_stack;
     }
 
     state->ram = calloc(RAM_SIZE, sizeof(uint8_t));
     if (state->ram == NULL) {
-        fprintf(stderr, "calloc() for Chip-8 RAM failed\n");
+        fprintf(stderr, "calloc() for CHIP-8 RAM failed\n");
         err = ENOMEM;
         goto error_alloc_ram;
     }
@@ -158,7 +158,7 @@ int init_memory(struct chip8_state *state, char *filename)
 
     fread(&state->ram[PROGRAM_START], 1, PROGRAM_END - PROGRAM_START + 1, file);
     if (ferror(file) || !feof(file)) {
-        fprintf(stderr, "fread() into Chip-8 RAM failed\n");
+        fprintf(stderr, "fread() into CHIP-8 RAM failed\n");
         err = EIO;
         goto error_read_file;
     }
@@ -181,7 +181,7 @@ int init_registers(struct chip8_state *state)
 {
     state->registers = calloc(1, sizeof(struct chip8_registers));
     if (state->registers == NULL) {
-        fprintf(stderr, "calloc() for Chip-8 registers failed\n");
+        fprintf(stderr, "calloc() for CHIP-8 REGISTERS failed\n");
         return ENOMEM;
     }
 
@@ -272,7 +272,7 @@ void deinit_memory(struct chip8_state *state)
     state->ram = NULL;
 }
 
-// TODO Check return value of fetch_decode_execute(), and return error if necessary
+// TODO (ricardoapl) Check return value of fetch_decode_execute() and return error if necessary
 int run(struct chip8_state *state)
 {
     int close_request = 0;
@@ -293,13 +293,12 @@ int run(struct chip8_state *state)
     return 0;
 }
 
-
-// TODO Implement missing cases 0x8, 0xE and 0xF
-// TODO Check return value for cases 0x00E0 and 0xD, and return error if necessary
+// TODO (ricardoapl) Implement missing cases 0x8, 0xE and 0xF
+// TODO (ricardoapl) Check return value for cases 0x00E0 and 0xD and return error if necessary
 int fetch_decode_execute(struct chip8_state *state)
 {
     uint8_t opcode[OPCODE_SIZE];
-    uint8_t x, y, n, nn, random, offset;
+    uint8_t x, y, n, nn, random, offset, old;
     uint16_t nnn;
     
     memcpy(opcode, state->registers->PC, OPCODE_SIZE);
@@ -377,8 +376,22 @@ int fetch_decode_execute(struct chip8_state *state)
             state->registers->V[x] ^= state->registers->V[y];
             break;
         case 0x4: // 8xy4
+            old = state->registers->V[x];
+            state->registers->V[x] += state->registers->V[y];
+            if (old > state->registers->V[x]) {
+                state->registers->V[15] = 1;
+            } else {
+                state->registers->V[15] = 0;
+            }
             break;
         case 0x5: // 8xy5
+            old = state->registers->V[x];
+            state->registers->V[x] -= state->registers->V[y];
+            if (old < state->registers->V[x]) {
+                state->registers->V[15] = 0;
+            } else {
+                state->registers->V[15] = 1;
+            }
             break;
         case 0x6: // 8xy6
             state->registers->V[15] = LS_1BITS(state->registers->V[y]);
@@ -386,6 +399,13 @@ int fetch_decode_execute(struct chip8_state *state)
             state->registers->V[x] = state->registers->V[y];
             break;
         case 0x7: // 8xy7
+            old = state->registers->V[x];
+            state->registers->V[x] = state->registers->V[y] - state->registers->V[x];
+            if (old < state->registers->V[x]) {
+                state->registers->V[15] = 0;
+            } else {
+                state->registers->V[15] = 1;
+            }
             break;
         case 0xE: // 8xyE
             state->registers->V[15] = MS_1BITS(state->registers->V[y]);
