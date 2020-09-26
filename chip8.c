@@ -149,7 +149,7 @@ int init_memory(struct chip8_state *state, char *filename)
         goto error_alloc_ram;
     }
 
-    file = fopen(filename, "r");
+    file = fopen(filename, "rb");
     if (file == NULL) {
         fprintf(stderr, "fopen() failed: %s\n", strerror(errno));
         err = EIO;
@@ -293,7 +293,7 @@ int run(struct chip8_state *state)
     return 0;
 }
 
-// TODO (ricardoapl) Implement missing cases 0x8, 0xE and 0xF
+// TODO (ricardoapl) Implement missing cases 0x8, 0xD, 0xE and 0xF
 // TODO (ricardoapl) Check return value for cases 0x00E0 and 0xD and return error if necessary
 int fetch_decode_execute(struct chip8_state *state)
 {
