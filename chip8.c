@@ -5,14 +5,16 @@
 #include <errno.h>
 #include <SDL.h>
 
+#define STACK_SIZE 16
+#define STACK_START 15
 #define RAM_SIZE 4096
 #define PROGRAM_START 0x200
 #define PROGRAM_END 0xFFF
-#define STACK_SIZE 16
-#define STACK_START 15
-#define SCREEN_BUFFER_WIDTH 64
-#define SCREEN_BUFFER_HEIGHT 32
 #define NUM_V_REGISTERS 16
+
+#define PIXELS_WIDTH 64
+#define PIXELS_HEIGHT 32
+#define BYTES_PER_PIXEL 4
 
 #define OPCODE_SIZE 2
 #define MS_1BITS(byte) ((byte >> 7) & 0x01)
@@ -24,19 +26,31 @@
 #define LS_12BITS(bytes) ((LS_4BITS(MS_8BITS(bytes)) << 8) | LS_8BITS(bytes))
 
 #define SDL_WINDOW_NAME "CHIP-8"
+#define SDL_WINDOWPOS_X SDL_WINDOWPOS_CENTERED
+#define SDL_WINDOWPOS_Y SDL_WINDOWPOS_CENTERED
 #define SDL_WINDOW_WIDTH 640
 #define SDL_WINDOW_HEIGHT 480
 #define SDL_WINDOW_FLAGS 0
+
 #define SDL_RENDERER_FLAGS SDL_RENDERER_ACCELERATED
 #define SDL_RENDERER_INDEX -1
 
-#define ESDLINIT 250
-#define ESDLWIN 251
-#define ESDLRNDR 252
+#define SDL_TEXTURE_FORMAT SDL_PIXELFORMAT_RGBA8888
+#define SDL_TEXTURE_ACESS SDL_TEXTUREACCESS_STREAMING
+#define SDL_TEXTURE_WIDTH PIXELS_WIDTH
+#define SDL_TEXTURE_HEIGHT PIXELS_HEIGHT
+
+#define PIXEL_DEFAULT_MASK 0x80
+#define PIXEL_STATE_UNSET 0x00000000
+#define PIXEL_STATE_SET 0xFFFFFF00
+
+#define SPRITE_WIDTH 8
+
+#define ESDL 250
 
 #define EXIT_INVALID_ARGS 1
 #define EXIT_INIT_FAILURE 2
-#define EXIT_RUN_FAILURE 3
+#define EXIT_RUNTIME_FAILURE 3
 
 struct chip8_registers {
     uint8_t V[NUM_V_REGISTERS];
@@ -48,9 +62,10 @@ struct chip8_registers {
 };
 
 struct chip8_screen {
-    uint8_t buffer[SCREEN_BUFFER_WIDTH * SCREEN_BUFFER_HEIGHT];
+    uint32_t pixels[PIXELS_WIDTH * PIXELS_HEIGHT];
     SDL_Window *window;
     SDL_Renderer *renderer;
+    SDL_Texture *texture;
 };
 
 struct chip8_state {
@@ -69,9 +84,9 @@ void deinit_screen(struct chip8_state *state);
 void deinit_registers(struct chip8_state *state);
 void deinit_memory(struct chip8_state *state);
 int run(struct chip8_state *state);
-int fetch_decode_execute(struct chip8_state *state);
-int screen_clear(struct chip8_screen *screen);
-int screen_draw(struct chip8_screen *screen, uint8_t x, uint8_t y, size_t sz, uint8_t *start);
+int _run(struct chip8_state *state);
+void screen_clear(struct chip8_screen *screen);
+uint8_t screen_draw(struct chip8_screen *screen, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite);
 
 // XXX (ricardoapl) Perhaps remove duplicate deinit() call
 int main(int argc, char *argv[])
@@ -92,7 +107,7 @@ int main(int argc, char *argv[])
     err = run(&state);
     if (err) {
         deinit(&state);
-        return EXIT_RUN_FAILURE;
+        return EXIT_RUNTIME_FAILURE;
     }
 
     deinit(&state);
@@ -191,46 +206,57 @@ int init_registers(struct chip8_state *state)
     return 0;
 }
 
+// XXX (ricardoapl) Perhaps break long lines of code into sensible chunks
 int init_screen(struct chip8_state *state)
 {
     int err;
     SDL_Window *window;
     SDL_Renderer *renderer;
+    SDL_Texture *texture;
     
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "SDL_Init() failed: %s\n", SDL_GetError());
-        err = ESDLINIT;
+        err = ESDL;
         goto error_init_sdl;
     }
 
-    window = SDL_CreateWindow(SDL_WINDOW_NAME, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                            SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
+    window = SDL_CreateWindow(SDL_WINDOW_NAME, SDL_WINDOWPOS_X, SDL_WINDOWPOS_Y, SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT, SDL_WINDOW_FLAGS);
     if (window == NULL) {
         fprintf(stderr, "SDL_CreateWindow() failed: %s\n", SDL_GetError());
-        err = ESDLWIN;
+        err = ESDL;
         goto error_create_window;
     }
 
     renderer = SDL_CreateRenderer(window, SDL_RENDERER_INDEX, SDL_RENDERER_FLAGS);
     if (renderer == NULL) {
         fprintf(stderr, "SDL_CreateRenderer() failed: %s\n", SDL_GetError());
-        err = ESDLRNDR;
+        err = ESDL;
         goto error_create_renderer;
+    }
+
+    texture = SDL_CreateTexture(renderer, SDL_TEXTURE_FORMAT, SDL_TEXTURE_ACESS, SDL_TEXTURE_WIDTH, SDL_TEXTURE_HEIGHT);
+    if (texture == NULL) {
+        fprintf(stderr, "SDL_CreateTexture() failed: %s\n", SDL_GetError());
+        err = ESDL;
+        goto error_create_texture;
     }
 
     state->screen = calloc(1, sizeof(struct chip8_screen));
     if (state->screen == NULL) {
-        fprintf(stderr, "calloc() for Chip-8 screen failed\n");
+        fprintf(stderr, "calloc() for Chip-8 SCREEN failed\n");
         err = ENOMEM;
         goto error_alloc_screen;
     }
 
     state->screen->window = window;
     state->screen->renderer = renderer;
+    state->screen->texture = texture;
 
     return 0;
 
 error_alloc_screen:
+    SDL_DestroyTexture(texture);
+error_create_texture:
     SDL_DestroyRenderer(renderer);
 error_create_renderer:
     SDL_DestroyWindow(window);
@@ -249,6 +275,7 @@ void deinit(struct chip8_state *state)
 
 void deinit_screen(struct chip8_state *state)
 {
+    SDL_DestroyTexture(state->screen->texture);
     SDL_DestroyRenderer(state->screen->renderer);
     SDL_DestroyWindow(state->screen->window);
     SDL_Quit();
@@ -272,15 +299,16 @@ void deinit_memory(struct chip8_state *state)
     state->ram = NULL;
 }
 
-// TODO (ricardoapl) Check return value of fetch_decode_execute() and return error if necessary
+// TODO (ricardoapl) Check return value of _run() and return error if necessary
 int run(struct chip8_state *state)
 {
+    int pitch = PIXELS_WIDTH * BYTES_PER_PIXEL;
     int close_request = 0;
     SDL_Event event;
     
     while (!close_request) {
 
-        fetch_decode_execute(state);
+        _run(state);  // Fetch, decode and execute next CHIP-8 instruction
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
@@ -288,17 +316,21 @@ int run(struct chip8_state *state)
                 break;
             }
         }
+        
+        SDL_RenderClear(state->screen->renderer);
+        SDL_UpdateTexture(state->screen->texture, NULL, state->screen->pixels, pitch);
+        SDL_RenderCopy(state->screen->renderer, state->screen->texture, NULL, NULL);
+        SDL_RenderPresent(state->screen->renderer);
     }
 
     return 0;
 }
 
-// TODO (ricardoapl) Implement missing cases 0x8, 0xD, 0xE and 0xF
-// TODO (ricardoapl) Check return value for cases 0x00E0 and 0xD and return error if necessary
-int fetch_decode_execute(struct chip8_state *state)
+// TODO (ricardoapl) Implement missing cases 0x8, 0xE and 0xF
+int _run(struct chip8_state *state)
 {
     uint8_t opcode[OPCODE_SIZE];
-    uint8_t x, y, n, nn, random, offset, old;
+    uint8_t x, y, n, nn, random, offset, tmp;
     uint16_t nnn;
     
     memcpy(opcode, state->registers->PC, OPCODE_SIZE);
@@ -376,18 +408,18 @@ int fetch_decode_execute(struct chip8_state *state)
             state->registers->V[x] ^= state->registers->V[y];
             break;
         case 0x4: // 8xy4
-            old = state->registers->V[x];
+            tmp = state->registers->V[x];
             state->registers->V[x] += state->registers->V[y];
-            if (old > state->registers->V[x]) {
+            if (tmp > state->registers->V[x]) {
                 state->registers->V[15] = 1;
             } else {
                 state->registers->V[15] = 0;
             }
             break;
         case 0x5: // 8xy5
-            old = state->registers->V[x];
+            tmp = state->registers->V[x];
             state->registers->V[x] -= state->registers->V[y];
-            if (old < state->registers->V[x]) {
+            if (tmp < state->registers->V[x]) {
                 state->registers->V[15] = 0;
             } else {
                 state->registers->V[15] = 1;
@@ -399,9 +431,9 @@ int fetch_decode_execute(struct chip8_state *state)
             state->registers->V[x] = state->registers->V[y];
             break;
         case 0x7: // 8xy7
-            old = state->registers->V[x];
+            tmp = state->registers->V[x];
             state->registers->V[x] = state->registers->V[y] - state->registers->V[x];
-            if (old < state->registers->V[x]) {
+            if (tmp < state->registers->V[x]) {
                 state->registers->V[15] = 0;
             } else {
                 state->registers->V[15] = 1;
@@ -438,8 +470,8 @@ int fetch_decode_execute(struct chip8_state *state)
         break;
 
     case 0xD: // Dxyn
-        screen_draw(state->screen, x, y, n, state->registers->I);
-        state->registers->V[15] = 0;
+        tmp = screen_draw(state->screen, state->registers->V[x], state->registers->V[y], n, state->registers->I);
+        state->registers->V[15] = tmp;
         break;
 
     case 0xE:
@@ -497,12 +529,45 @@ int fetch_decode_execute(struct chip8_state *state)
     return 0;
 }
 
-int screen_clear(struct chip8_screen *screen)
+void screen_clear(struct chip8_screen *screen)
 {
-    return 0;
+    uint8_t idx;
+    for (uint8_t row = 0; row < PIXELS_HEIGHT; row++) {
+        for (uint8_t col = 0; col < PIXELS_WIDTH; col++) {
+            idx = row + col;
+            screen->pixels[idx] = PIXEL_STATE_UNSET;
+        }
+    }
 }
 
-int screen_draw(struct chip8_screen *screen, uint8_t x, uint8_t y, size_t sz, uint8_t *start)
+uint8_t screen_draw(struct chip8_screen *screen, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite)
 {
-    return 0;
+    uint8_t ret = 0;
+    uint8_t screen_row, screen_col;
+    uint8_t sprite_row, sprite_col;
+    uint8_t mask;
+    uint16_t idx;
+    uint32_t old_state, new_state;
+
+    for (uint8_t row = 0; row < sprite_height; row++) {
+        screen_row = y + row;
+        sprite_row = sprite[row];
+        mask = PIXEL_DEFAULT_MASK;
+        for (uint8_t col = 0; col < SPRITE_WIDTH; col++) {
+            screen_col = x + col;
+            sprite_col = (sprite_row & mask) >> (SPRITE_WIDTH - 1 - col);
+
+            idx = (screen_row * PIXELS_WIDTH) + screen_col;
+            old_state = screen->pixels[idx];
+            screen->pixels[idx] ^= (sprite_col * PIXEL_STATE_SET);
+            new_state = screen->pixels[idx];
+            if (old_state == PIXEL_STATE_SET && new_state == PIXEL_STATE_UNSET) {
+                ret = 1;
+            }
+
+            mask >>= 1;
+        }
+    }
+
+    return ret;
 }
