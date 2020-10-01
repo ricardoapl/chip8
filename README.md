@@ -40,8 +40,8 @@ Please use the [issue tracker](https://github.com/ricardoapl/chip8/issues) to as
 ## Roadmap
 
 - [x] Bootstrap
-- [ ] Fetch->Decode->Execute
-- [ ] Display
+- [ ] Fetch, decode and execute of instructions
+- [x] Display
 - [ ] Keyboard
 - [ ] Sound
 
