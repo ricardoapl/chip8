@@ -6,7 +6,7 @@
 #include <SDL.h>
 
 #define STACK_SIZE 16
-#define STACK_START 15
+#define STACK_START 0x00
 #define RAM_SIZE 4096
 #define PROGRAM_START 0x200
 #define PROGRAM_END 0xFFF
@@ -349,8 +349,8 @@ int _run(struct chip8_state *state)
             screen_clear(state->screen);
             break;
         case 0xEE: // 0x00EE
-            state->registers->SP++;
             state->registers->PC = *state->registers->SP;
+            state->registers->SP--;
             break;
         default:
             break;
@@ -362,8 +362,8 @@ int _run(struct chip8_state *state)
         break;
 
     case 0x2: // 2nnn
+        state->registers->SP++;
         *state->registers->SP = state->registers->PC;
-        state->registers->SP--;
         state->registers->PC = &state->ram[nnn];
         break;
 
