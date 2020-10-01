@@ -243,7 +243,7 @@ int init_screen(struct chip8_state *state)
 
     state->screen = calloc(1, sizeof(struct chip8_screen));
     if (state->screen == NULL) {
-        fprintf(stderr, "calloc() for Chip-8 SCREEN failed\n");
+        fprintf(stderr, "calloc() for CHIP-8 SCREEN failed\n");
         err = ENOMEM;
         goto error_alloc_screen;
     }
@@ -531,10 +531,10 @@ int _run(struct chip8_state *state)
 
 void screen_clear(struct chip8_screen *screen)
 {
-    uint8_t idx;
+    uint16_t idx;
     for (uint8_t row = 0; row < PIXELS_HEIGHT; row++) {
         for (uint8_t col = 0; col < PIXELS_WIDTH; col++) {
-            idx = row + col;
+            idx = (row * PIXELS_WIDTH) + col;
             screen->pixels[idx] = PIXEL_STATE_UNSET;
         }
     }
