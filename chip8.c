@@ -326,7 +326,6 @@ int run(struct chip8_state *state)
     return 0;
 }
 
-// TODO (ricardoapl) Implement missing cases 0x8, 0xE and 0xF
 int _run(struct chip8_state *state)
 {
     uint8_t opcode[OPCODE_SIZE];
@@ -474,8 +473,10 @@ int _run(struct chip8_state *state)
     case 0xE:
         switch (LS_8BITS(opcode)) {
         case 0x9E: // Ex9E
+            // TODO (ricardoapl) Skip next instruction if key with the value of V[x] is pressed
             break;
         case 0xA1: // ExA1
+            // TODO (ricardoapl) Skip next instruction if key with the value of V[x] is not pressed
             break;
         default:
             break;
@@ -488,6 +489,7 @@ int _run(struct chip8_state *state)
             state->registers->V[x] = state->registers->DT;
             break;
         case 0x0A: // Fx0A
+            // TODO (ricardoapl) Wait for a key press, store the value of the key in V[x]
             break;
         case 0x15: // Fx15
             state->registers->DT = state->registers->V[x];
@@ -499,8 +501,10 @@ int _run(struct chip8_state *state)
             state->registers->I += state->registers->V[x];
             break;
         case 0x29: // Fx29
+            // TODO (ricardoapl) Set I = location of sprite for digit V[x]
             break;
         case 0x33: // Fx33
+            // TODO (ricardoapl) Store BCD representation of V[x] in memory locations I, I+1, and I+2
             break;
         case 0x55: // Fx55
             for (int i = 0; i <= x; i++) {
