@@ -408,22 +408,20 @@ int _run(struct chip8_state *state)
             state->registers->V[x] ^= state->registers->V[y];
             break;
         case 0x4: // 8xy4
-            tmp = state->registers->V[x];
-            state->registers->V[x] += state->registers->V[y];
-            if (tmp > state->registers->V[x]) {
-                state->registers->V[15] = 1;
+            if (state->registers->V[x] + state->registers->V[y] > UINT8_MAX) {
+                state->registers->V[15] = 1; // A carry will occur
             } else {
                 state->registers->V[15] = 0;
             }
+            state->registers->V[x] += state->registers->V[y];
             break;
         case 0x5: // 8xy5
-            tmp = state->registers->V[x];
-            state->registers->V[x] -= state->registers->V[y];
-            if (tmp < state->registers->V[x]) {
-                state->registers->V[15] = 0;
+            if (state->registers->V[y] > state->registers->V[x]) {
+                state->registers->V[15] = 0; // A borrow will occur
             } else {
                 state->registers->V[15] = 1;
             }
+            state->registers->V[x] -= state->registers->V[y];
             break;
         case 0x6: // 8xy6
             state->registers->V[15] = LS_1BITS(state->registers->V[y]);
@@ -431,13 +429,12 @@ int _run(struct chip8_state *state)
             state->registers->V[x] = state->registers->V[y];
             break;
         case 0x7: // 8xy7
-            tmp = state->registers->V[x];
-            state->registers->V[x] = state->registers->V[y] - state->registers->V[x];
-            if (tmp < state->registers->V[x]) {
-                state->registers->V[15] = 0;
+            if (state->registers->V[x] > state->registers->V[y]) {
+                state->registers->V[15] = 0; // A borrow will occur
             } else {
                 state->registers->V[15] = 1;
             }
+            state->registers->V[x] = state->registers->V[y] - state->registers->V[x];
             break;
         case 0xE: // 8xyE
             state->registers->V[15] = MS_1BITS(state->registers->V[y]);
