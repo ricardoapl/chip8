@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 #include <SDL.h>
 
 #define STACK_SIZE 16
@@ -11,10 +12,6 @@
 #define PROGRAM_START 0x200
 #define PROGRAM_END 0xFFF
 #define NUM_V_REGISTERS 16
-
-#define PIXELS_WIDTH 64
-#define PIXELS_HEIGHT 32
-#define BYTES_PER_PIXEL 4
 
 #define OPCODE_SIZE 2
 #define MS_1BITS(byte) ((byte >> 7) & 0x01)
@@ -40,17 +37,19 @@
 #define SDL_TEXTURE_WIDTH PIXELS_WIDTH
 #define SDL_TEXTURE_HEIGHT PIXELS_HEIGHT
 
+#define PIXELS_WIDTH 64
+#define PIXELS_HEIGHT 32
+#define BYTES_PER_PIXEL 4
 #define PIXEL_DEFAULT_MASK 0x80
 #define PIXEL_STATE_UNSET 0x00000000
 #define PIXEL_STATE_SET 0xFFFFFF00
 
 #define SPRITE_WIDTH 8
 
-#define ESDL 250
-
 #define EXIT_INVALID_ARGS 1
 #define EXIT_INIT_FAILURE 2
-#define EXIT_RUNTIME_FAILURE 3
+
+#define ESDL 250
 
 struct chip8_registers {
     uint8_t V[NUM_V_REGISTERS];
@@ -61,7 +60,7 @@ struct chip8_registers {
     uint8_t *I;
 };
 
-struct chip8_screen {
+struct chip8_display {
     uint32_t pixels[PIXELS_WIDTH * PIXELS_HEIGHT];
     SDL_Window *window;
     SDL_Renderer *renderer;
@@ -72,27 +71,28 @@ struct chip8_state {
     uint8_t *ram;
     uint8_t **stack;
     struct chip8_registers *registers;
-    struct chip8_screen *screen;
+    struct chip8_display *display;
 };
 
 int init(struct chip8_state *state, char *filename);
 int init_memory(struct chip8_state *state, char *filename);
 int init_registers(struct chip8_state *state);
-int init_screen(struct chip8_state *state);
+int init_display(struct chip8_state *state);
 void deinit(struct chip8_state *state);
-void deinit_screen(struct chip8_state *state);
+void deinit_display(struct chip8_state *state);
 void deinit_registers(struct chip8_state *state);
 void deinit_memory(struct chip8_state *state);
 int run(struct chip8_state *state);
-int _run(struct chip8_state *state);
-void screen_clear(struct chip8_screen *screen);
-uint8_t screen_draw(struct chip8_screen *screen, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite);
+void clear_display(struct chip8_display *display);
+uint8_t draw_display(struct chip8_display *display, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite);
+int refresh_display(struct chip8_display *display);
 
-// XXX (ricardoapl) Perhaps remove duplicate deinit() call
 int main(int argc, char *argv[])
 {
-    int err;
+    int err = 0;
+    int close_request = 0;
     struct chip8_state state;
+    SDL_Event event;
 
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
@@ -104,21 +104,33 @@ int main(int argc, char *argv[])
         return EXIT_INIT_FAILURE;
     }
 
-    err = run(&state);
-    if (err) {
-        deinit(&state);
-        return EXIT_RUNTIME_FAILURE;
+    while (!close_request) {
+        err = run(&state);  // Fetch, decode and execute next CHIP-8 instruction
+        if (err) {
+            break;
+        }
+
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                close_request = 1;
+                break;
+            }
+        }
+        
+        err = refresh_display(state.display);
+        if (err) {
+            break;
+        }
     }
 
     deinit(&state);
-
-    return EXIT_SUCCESS;
+    return err;
 }
 
-// TODO (ricardoapl) Call srand() to seed RNG used by rand()
 int init(struct chip8_state *state, char *filename)
 {
     int err;
+    unsigned int seed;
 
     err = init_memory(state, filename);
     if (err) {
@@ -130,14 +142,17 @@ int init(struct chip8_state *state, char *filename)
         goto error_init_registers;
     }
 
-    err = init_screen(state);
+    err = init_display(state);
     if (err) {
-        goto error_init_screen;
+        goto error_init_display;
     }
+
+    seed = time(NULL);
+    srand(seed);
 
     return 0;
 
-error_init_screen:
+error_init_display:
     deinit_registers(state);
 error_init_registers:
     deinit_memory(state);
@@ -206,8 +221,7 @@ int init_registers(struct chip8_state *state)
     return 0;
 }
 
-// XXX (ricardoapl) Perhaps break long lines of code into sensible chunks
-int init_screen(struct chip8_state *state)
+int init_display(struct chip8_state *state)
 {
     int err;
     SDL_Window *window;
@@ -241,20 +255,20 @@ int init_screen(struct chip8_state *state)
         goto error_create_texture;
     }
 
-    state->screen = calloc(1, sizeof(struct chip8_screen));
-    if (state->screen == NULL) {
-        fprintf(stderr, "calloc() for CHIP-8 SCREEN failed\n");
+    state->display = calloc(1, sizeof(struct chip8_display));
+    if (state->display == NULL) {
+        fprintf(stderr, "calloc() for CHIP-8 DISPLAY failed\n");
         err = ENOMEM;
-        goto error_alloc_screen;
+        goto error_alloc_display;
     }
 
-    state->screen->window = window;
-    state->screen->renderer = renderer;
-    state->screen->texture = texture;
+    state->display->window = window;
+    state->display->renderer = renderer;
+    state->display->texture = texture;
 
     return 0;
 
-error_alloc_screen:
+error_alloc_display:
     SDL_DestroyTexture(texture);
 error_create_texture:
     SDL_DestroyRenderer(renderer);
@@ -268,20 +282,20 @@ error_init_sdl:
 
 void deinit(struct chip8_state *state)
 {
-    deinit_screen(state);
+    deinit_display(state);
     deinit_registers(state);
     deinit_memory(state);
 }
 
-void deinit_screen(struct chip8_state *state)
+void deinit_display(struct chip8_state *state)
 {
-    SDL_DestroyTexture(state->screen->texture);
-    SDL_DestroyRenderer(state->screen->renderer);
-    SDL_DestroyWindow(state->screen->window);
+    SDL_DestroyTexture(state->display->texture);
+    SDL_DestroyRenderer(state->display->renderer);
+    SDL_DestroyWindow(state->display->window);
     SDL_Quit();
     
-    free(state->screen);
-    state->screen = NULL;
+    free(state->display);
+    state->display = NULL;
 }
 
 void deinit_registers(struct chip8_state *state)
@@ -299,37 +313,10 @@ void deinit_memory(struct chip8_state *state)
     state->ram = NULL;
 }
 
-// TODO (ricardoapl) Check return value of _run() and return error if necessary
 int run(struct chip8_state *state)
 {
-    int pitch = PIXELS_WIDTH * BYTES_PER_PIXEL;
-    int close_request = 0;
-    SDL_Event event;
-    
-    while (!close_request) {
-
-        _run(state);  // Fetch, decode and execute next CHIP-8 instruction
-
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
-                close_request = 1;
-                break;
-            }
-        }
-        
-        SDL_RenderClear(state->screen->renderer);
-        SDL_UpdateTexture(state->screen->texture, NULL, state->screen->pixels, pitch);
-        SDL_RenderCopy(state->screen->renderer, state->screen->texture, NULL, NULL);
-        SDL_RenderPresent(state->screen->renderer);
-    }
-
-    return 0;
-}
-
-int _run(struct chip8_state *state)
-{
     uint8_t opcode[OPCODE_SIZE];
-    uint8_t x, y, n, nn, random, offset, tmp;
+    uint8_t x, y, n, nn, random, offset;
     uint16_t nnn;
     
     memcpy(opcode, state->registers->PC, OPCODE_SIZE);
@@ -345,7 +332,7 @@ int _run(struct chip8_state *state)
     case 0x0:
         switch (LS_8BITS(opcode)) {
         case 0xE0: // 0x00E0
-            screen_clear(state->screen);
+            clear_display(state->display);
             break;
         case 0xEE: // 0x00EE
             state->registers->PC = *state->registers->SP;
@@ -466,8 +453,7 @@ int _run(struct chip8_state *state)
         break;
 
     case 0xD: // Dxyn
-        tmp = screen_draw(state->screen, state->registers->V[x], state->registers->V[y], n, state->registers->I);
-        state->registers->V[15] = tmp;
+        state->registers->V[15] = draw_display(state->display, state->registers->V[x], state->registers->V[y], n, state->registers->I);
         break;
 
     case 0xE:
@@ -530,45 +516,70 @@ int _run(struct chip8_state *state)
     return 0;
 }
 
-void screen_clear(struct chip8_screen *screen)
+void clear_display(struct chip8_display *display)
 {
     uint16_t idx;
+
     for (uint8_t row = 0; row < PIXELS_HEIGHT; row++) {
         for (uint8_t col = 0; col < PIXELS_WIDTH; col++) {
             idx = (row * PIXELS_WIDTH) + col;
-            screen->pixels[idx] = PIXEL_STATE_UNSET;
+            display->pixels[idx] = PIXEL_STATE_UNSET;
         }
     }
 }
 
-uint8_t screen_draw(struct chip8_screen *screen, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite)
+uint8_t draw_display(struct chip8_display *display, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite)
 {
-    uint8_t ret = 0;
-    uint8_t screen_row, screen_col;
-    uint8_t sprite_row, sprite_col;
-    uint8_t mask;
+    uint8_t display_row, display_col, sprite_row, sprite_col, mask, ret = 0;
     uint16_t idx;
     uint32_t old_state, new_state;
 
     for (uint8_t row = 0; row < sprite_height; row++) {
-        screen_row = y + row;
+        display_row = y + row;
         sprite_row = sprite[row];
         mask = PIXEL_DEFAULT_MASK;
         for (uint8_t col = 0; col < SPRITE_WIDTH; col++) {
-            screen_col = x + col;
+            display_col = x + col;
             sprite_col = (sprite_row & mask) >> (SPRITE_WIDTH - 1 - col);
-
-            idx = (screen_row * PIXELS_WIDTH) + screen_col;
-            old_state = screen->pixels[idx];
-            screen->pixels[idx] ^= (sprite_col * PIXEL_STATE_SET);
-            new_state = screen->pixels[idx];
+            mask >>= 1;
+            
+            idx = (display_row * PIXELS_WIDTH) + display_col;
+            old_state = display->pixels[idx];
+            display->pixels[idx] ^= (sprite_col * PIXEL_STATE_SET);
+            new_state = display->pixels[idx];
             if (old_state == PIXEL_STATE_SET && new_state == PIXEL_STATE_UNSET) {
                 ret = 1;
             }
-
-            mask >>= 1;
         }
     }
 
     return ret;
+}
+
+int refresh_display(struct chip8_display *display)
+{
+    int err;
+    int pitch = PIXELS_WIDTH * BYTES_PER_PIXEL;
+
+    err = SDL_RenderClear(display->renderer);
+    if (err) {
+        fprintf(stderr, "SDL_RenderClear() failed: %s\n", SDL_GetError());
+        return err;
+    }
+
+    err = SDL_UpdateTexture(display->texture, NULL, display->pixels, pitch);
+    if (err) {
+        fprintf(stderr, "SDL_UpdateTexture() failed: %s\n", SDL_GetError());
+        return err;
+    }
+
+    err = SDL_RenderCopy(display->renderer, display->texture, NULL, NULL);
+    if (err) {
+        fprintf(stderr, "SDL_RenderCopy() failed: %s\n", SDL_GetError());
+        return err;
+    }
+
+    SDL_RenderPresent(display->renderer);
+
+    return 0;
 }
