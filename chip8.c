@@ -46,6 +46,10 @@
 
 #define SPRITE_WIDTH 8
 
+#define CPU_CLOCK_HZ 500
+#define TIMER_CLOCK_HZ 60
+#define TIMER_UPDATE_CYCLES (CPU_CLOCK_HZ / TIMER_CLOCK_HZ)
+
 #define EXIT_INVALID_ARGS 1
 #define EXIT_INIT_FAILURE 2
 
@@ -84,13 +88,15 @@ void deinit_registers(struct chip8_state *state);
 void deinit_memory(struct chip8_state *state);
 int run(struct chip8_state *state);
 void clear_display(struct chip8_display *display);
-uint8_t draw_display(struct chip8_display *display, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite);
+int draw_display(struct chip8_display *display, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite);
 int refresh_display(struct chip8_display *display);
 
 int main(int argc, char *argv[])
 {
     int err = 0;
-    int close_request = 0;
+    int quit = 0;
+    int cycles = 0;
+    uint32_t delay, delta_ticks, start_tick, end_tick;
     struct chip8_state state;
     SDL_Event event;
 
@@ -104,22 +110,35 @@ int main(int argc, char *argv[])
         return EXIT_INIT_FAILURE;
     }
 
-    while (!close_request) {
+    while (!quit) {
+        start_tick = SDL_GetTicks();
+
         err = run(&state);  // Fetch, decode and execute next CHIP-8 instruction
         if (err) {
             break;
         }
 
+        cycles++;
+        if (cycles == TIMER_UPDATE_CYCLES) {
+            err = refresh_display(state.display);
+            if (err) {
+                break;
+            }
+            cycles = 0;
+        }
+
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
-                close_request = 1;
+                quit = 1;
                 break;
             }
         }
-        
-        err = refresh_display(state.display);
-        if (err) {
-            break;
+
+        end_tick = SDL_GetTicks();
+        delta_ticks = end_tick - start_tick;
+        if (delta_ticks < (1000 / CPU_CLOCK_HZ)) {
+            delay = (1000 / CPU_CLOCK_HZ) - delta_ticks;
+            SDL_Delay(delay);
         }
     }
 
@@ -528,7 +547,7 @@ void clear_display(struct chip8_display *display)
     }
 }
 
-uint8_t draw_display(struct chip8_display *display, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite)
+int draw_display(struct chip8_display *display, uint8_t x, uint8_t y, uint8_t sprite_height, uint8_t *sprite)
 {
     uint8_t display_row, display_col, sprite_row, sprite_col, mask, ret = 0;
     uint16_t idx;
